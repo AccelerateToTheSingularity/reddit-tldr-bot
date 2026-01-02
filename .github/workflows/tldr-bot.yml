@@ -1,6 +1,11 @@
 name: TLDR Bot
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'tldr_runner.py'
+      - '.github/workflows/tldr-bot.yml'
   schedule:
     - cron: '*/3 * * * *'  # Every 3 minutes
   workflow_dispatch:  # Manual trigger for testing

@@ -1,0 +1,61 @@
+name: TLDR Bot
+
+on:
+  schedule:
+    - cron: '*/3 * * * *'  # Every 3 minutes
+  workflow_dispatch:  # Manual trigger for testing
+
+jobs:
+  generate-tldrs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Run TLDR Bot
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python tldr_runner.py
+      
+      - name: Commit state changes
+        run: |
+          git config user.name "TLDR Bot"
+          git config user.email "tldr-bot@github.com"
+          git add data/tldr_state.json data/stats.json
+          git diff --quiet --cached || git commit -m "📊 Update TLDR state [skip ci]"
+          git push
+      
+      - name: Send failure notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ Reddit TLDR Bot Failed"
+          to: bardcan@gmail.com
+          from: Reddit TLDR Bot <${{ secrets.EMAIL_USERNAME }}>
+          body: |
+            The Reddit TLDR Bot workflow has failed.
+            
+            Check the logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            Time: ${{ github.event.head_commit.timestamp || 'N/A' }}

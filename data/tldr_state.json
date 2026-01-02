@@ -1,0 +1,10 @@
+{
+  "last_check": null,
+  "processed_posts": [],
+  "stats": {
+    "total_posts_processed": 0,
+    "total_tldrs_generated": 0,
+    "total_tokens_used": 0,
+    "total_cost": 0.0
+  }
+}

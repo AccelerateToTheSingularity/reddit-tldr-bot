@@ -14,7 +14,7 @@ import google.generativeai as genai
 
 # Configuration from environment
 SUBREDDIT = "accelerate"
-WORD_THRESHOLD = 240  # Minimum words to trigger TLDR
+WORD_THRESHOLD = 250  # Minimum words to trigger TLDR
 MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
 MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
 MAX_AGE_HOURS = 24  # Only process posts/comments from last 24 hours
@@ -408,14 +408,14 @@ def main():
                     # Check for both "Community Discussion" and "Community Discussion Summary" formats
                     import re
                     # Pattern to match any existing comment summary section
-                    new_body = re.split(r'\n*---\s*\n+\*\*💬 Community Discussion', new_body)[0].rstrip()
+                    new_body = re.split(r'\n*---\s*\n+\*\*💬 (Community )?Discussion', new_body)[0].rstrip()
                     
-                    new_body += f"\n\n---\n\n**💬 Community Discussion Summary ({next_milestone}+ comments):** {summary_text}"
+                    new_body += f"\n\n---\n\n**💬 Discussion Summary ({next_milestone}+ comments):** {summary_text}"
                     existing_comment.edit(new_body)
                     print(f"     ✅ Updated existing comment with summary ({token_info['total_tokens']} tokens)")
                 else:
                     # Create new pinned comment
-                    comment_text = f"**💬 Community Discussion Summary ({next_milestone}+ comments):** {summary_text}"
+                    comment_text = f"**💬 Discussion Summary ({next_milestone}+ comments):** {summary_text}"
                     comment = submission.reply(comment_text)
                     comment.mod.distinguish(sticky=True)
                     print(f"     ✅ Created new summary comment ({token_info['total_tokens']} tokens)")

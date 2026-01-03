@@ -1,13 +1,13 @@
 {
-  "last_check": 1767460725.273428,
+  "last_check": 1767461395.861454,
   "processed_posts": [
-    "1q225qa",
-    "1q26fmj",
     "1q2j6a2",
-    "1q27d25"
+    "1q26fmj",
+    "1q27d25",
+    "1q225qa"
   ],
   "stats": {
-    "total_posts_processed": 91,
+    "total_posts_processed": 92,
     "total_tldrs_generated": 19,
     "total_tokens_used": 45972,
     "total_cost": 0.006239100000000002
@@ -34,20 +34,20 @@
     "1q2kqmv": 20
   },
   "processed_comments": [
-    "nxchy4o",
-    "nxf2px2",
-    "nxce127",
-    "nxazc5k",
-    "nxbokj1",
     "nxcxbyj",
-    "nxdhd5t",
-    "nxcciit",
-    "nxdhi17",
+    "nxchy4o",
     "nxekwxj",
     "nxejn2y",
-    "nxa9soc",
-    "nxcs3ob",
+    "nxdk2bj",
+    "nxbokj1",
+    "nxazc5k",
     "nxct18i",
-    "nxdk2bj"
+    "nxcs3ob",
+    "nxce127",
+    "nxcciit",
+    "nxdhd5t",
+    "nxdhi17",
+    "nxf2px2",
+    "nxa9soc"
   ]
 }

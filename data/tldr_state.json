@@ -1,10 +1,17 @@
 {
-  "last_check": null,
-  "processed_posts": [],
+  "last_check": 1767399949.3625,
+  "processed_posts": [
+    "1q27d25"
+  ],
   "stats": {
-    "total_posts_processed": 0,
-    "total_tldrs_generated": 0,
-    "total_tokens_used": 0,
-    "total_cost": 0.0
+    "total_posts_processed": 1,
+    "total_tldrs_generated": 1,
+    "total_tokens_used": 2423,
+    "total_cost": 0.0003401
+  },
+  "daily_tldrs": 2,
+  "daily_reset_date": "2026-01-03",
+  "comment_summaries": {
+    "1q2crc2": 20
   }
 }

@@ -396,7 +396,7 @@ def main():
                     # Pattern to match any existing comment summary section
                     new_body = re.split(r'\n*---\s*\n+\*\*💬 Community Discussion', new_body)[0].rstrip()
                     
-                    new_body += f"\n\n---\n\n**💬 Community Discussion ({next_milestone}+ comments):** {summary_text}"
+                    new_body += f"\n\n---\n\n**💬 Community Discussion Summary ({next_milestone}+ comments):** {summary_text}"
                     existing_comment.edit(new_body)
                     print(f"     ✅ Updated existing comment with summary ({token_info['total_tokens']} tokens)")
                 else:

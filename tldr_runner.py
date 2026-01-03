@@ -18,7 +18,7 @@ WORD_THRESHOLD = 240  # Minimum words to trigger TLDR
 MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
 MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
 MAX_AGE_HOURS = 24  # Only process posts/comments from last 24 hours
-COMMENT_MILESTONES = [20, 50, 100, 200, 300, 400]  # Comment thresholds for summaries
+COMMENT_MILESTONES = [20, 50, 100]  # Comment thresholds for summaries
 
 
 def load_state(state_file: str = "data/tldr_state.json") -> dict:

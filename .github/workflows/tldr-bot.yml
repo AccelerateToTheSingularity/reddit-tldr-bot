@@ -47,6 +47,7 @@ jobs:
           git config user.email "tldr-bot@github.com"
           git add data/tldr_state.json data/stats.json
           git diff --quiet --cached || git commit -m "📊 Update TLDR state [skip ci]"
+          git pull --rebase
           git push
       
       - name: Send failure notification

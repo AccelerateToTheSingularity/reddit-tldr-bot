@@ -1,17 +1,18 @@
 {
-  "last_check": 1767420170.13005,
+  "last_check": 1767420605.20784,
   "processed_posts": [
+    "1q27d25",
     "1q26fmj",
-    "1q2j6a2",
-    "1q27d25"
+    "1q225qa",
+    "1q2j6a2"
   ],
   "stats": {
-    "total_posts_processed": 22,
-    "total_tldrs_generated": 3,
-    "total_tokens_used": 24594,
-    "total_cost": 0.003297600000000001
+    "total_posts_processed": 23,
+    "total_tldrs_generated": 4,
+    "total_tokens_used": 25953,
+    "total_cost": 0.0035058000000000008
   },
-  "daily_tldrs": 21,
+  "daily_tldrs": 22,
   "daily_reset_date": "2026-01-03",
   "comment_summaries": {
     "1q2crc2": 100,

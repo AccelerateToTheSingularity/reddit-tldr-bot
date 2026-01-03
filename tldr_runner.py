@@ -7,15 +7,17 @@ import os
 import sys
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, date
 
 import praw
 import google.generativeai as genai
 
 # Configuration from environment
 SUBREDDIT = "accelerate"
-WORD_THRESHOLD = 500
-MAX_TLDR_PER_RUN = 5  # Don't overwhelm in a single run
+WORD_THRESHOLD = 240  # Minimum words to trigger TLDR
+MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
+MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
+COMMENT_MILESTONES = [20, 50, 100, 200, 300, 400]  # Comment thresholds for summaries
 
 
 def load_state(state_file: str = "data/tldr_state.json") -> dict:
@@ -30,6 +32,9 @@ def load_state(state_file: str = "data/tldr_state.json") -> dict:
     return {
         "last_check": None,
         "processed_posts": [],
+        "comment_summaries": {},  # {post_id: last_milestone}
+        "daily_tldrs": 0,
+        "daily_reset_date": None,
         "stats": {
             "total_posts_processed": 0,
             "total_tldrs_generated": 0,
@@ -87,20 +92,46 @@ def calculate_max_tldr_words(content_word_count: int) -> int:
     return max(40, min(400, scaled))
 
 
-def get_tldr_prompt(max_words: int = 100) -> str:
-    """Generate TLDR system prompt."""
-    return f"""You are a TLDR summarization bot for r/accelerate, a subreddit about technological acceleration and AI progress.
+def get_tldr_prompt(max_words: int = 75) -> str:
+    """Get the TLDR generation prompt for r/accelerate posts."""
+    return f"""You are a summarization assistant for r/accelerate, a community focused on technological acceleration, the Technological Singularity, and AI progress.
 
-Your task is to create a clear, informative TLDR summary of the provided post.
+Your task is to create a concise, accurate TLDR (Too Long; Didn't Read) summary.
 
-Guidelines:
-- Target approximately {max_words} words, but prioritize completeness over word count
-- Capture the main argument, key points, and conclusions
-- Maintain a neutral, informative tone
-- Use clear, direct language
-- Focus on what the post is actually saying, not meta-commentary
+**CRITICAL REQUIREMENTS:**
+- Target approximately {max_words} words, BUT THIS IS A SOFT GUIDELINE - NOT A HARD LIMIT
+- **COMPLETENESS IS MORE IMPORTANT THAN WORD COUNT** - it's better to exceed the word target than to cut off mid-sentence or omit key points
+- NEVER cut off mid-sentence or mid-thought under any circumstances
+- If you need 20-50 extra words to finish properly, USE THEM
+- Cover all major points from the content proportionally to its length
+- For long posts (1000+ words), provide a comprehensive multi-sentence summary
 
-Respond with ONLY the TLDR text. No prefixes like "TLDR:" or "Summary:" - just the summary itself."""
+**SUMMARIZATION GUIDELINES:**
+1. **Complete Thoughts First**: Finish every sentence and thought completely - this overrides word limits
+2. **Cover All Key Points**: For long posts, include all major arguments, not just the first one
+3. **Natural Ending**: End on a complete thought with proper punctuation, never mid-word or mid-sentence
+4. **Maintain Perspective**: Preserve the author's viewpoint and accelerationist context
+5. **Technical Accuracy**: Preserve important technical details and terminology
+
+**FORMAT:**
+Provide only the summary content - no headers, labels, or metadata. Just the summary text, ready to post directly. Your summary MUST end with a complete sentence and proper punctuation."""
+
+
+def get_comment_summary_prompt(max_words: int = 100) -> str:
+    """Get the comment summarization prompt."""
+    return f"""You are summarizing community discussion from r/accelerate, a subreddit about technological acceleration and AI progress.
+
+Your task is to synthesize the main viewpoints, key insights, and any notable debates from the comments.
+
+**CRITICAL REQUIREMENTS:**
+- Target approximately {max_words} words, BUT COMPLETENESS IS MORE IMPORTANT
+- Focus on substance, not meta-commentary about the discussion itself
+- Capture diverse perspectives if they exist
+- Highlight any consensus or interesting disagreements
+
+**FORMAT:**
+Provide only the summary content - no headers, labels, or metadata. Just the summary text.
+Your summary MUST end with a complete sentence and proper punctuation."""
 
 
 def generate_tldr(content: str, title: str, gemini_model) -> tuple[str, dict]:
@@ -129,6 +160,85 @@ def generate_tldr(content: str, title: str, gemini_model) -> tuple[str, dict]:
     return response.text.strip(), token_info
 
 
+def generate_comment_summary(comments: list, gemini_model) -> tuple[str, dict]:
+    """Generate summary of comments using Gemini API."""
+    # Build comment text
+    comment_texts = []
+    for i, comment in enumerate(comments[:30], 1):  # Limit to 30 comments for token efficiency
+        if hasattr(comment, 'body') and comment.body and comment.body != '[deleted]':
+            comment_texts.append(f"Comment {i}: {comment.body[:500]}")  # Truncate long comments
+    
+    if not comment_texts:
+        return None, {"total_tokens": 0, "cost": 0.0}
+    
+    combined_content = "\n\n".join(comment_texts)
+    word_count = count_words(combined_content)
+    max_words = calculate_max_tldr_words(word_count)
+    
+    prompt = get_comment_summary_prompt(max_words)
+    
+    response = gemini_model.generate_content(
+        [{"role": "user", "parts": [prompt + "\n\nComments to summarize:\n\n" + combined_content]}],
+        generation_config={"temperature": 0.3, "max_output_tokens": 1024}
+    )
+    
+    token_info = {
+        "input_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0,
+        "output_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0,
+    }
+    token_info["total_tokens"] = token_info["input_tokens"] + token_info["output_tokens"]
+    token_info["cost"] = (token_info["input_tokens"] * 0.10 + token_info["output_tokens"] * 0.40) / 1_000_000
+    
+    return response.text.strip(), token_info
+
+
+def find_bot_comment(submission, username: str):
+    """Find our existing stickied comment on a post, if any."""
+    submission.comments.replace_more(limit=0)
+    for comment in submission.comments:
+        if hasattr(comment, 'author') and comment.author:
+            if comment.author.name == username and comment.stickied:
+                return comment
+    return None
+
+
+def get_next_milestone(comment_count: int, last_milestone: int = 0) -> int:
+    """Get the next milestone threshold that should be processed."""
+    for milestone in COMMENT_MILESTONES:
+        if comment_count >= milestone and milestone > last_milestone:
+            # Find the highest milestone we've crossed
+            pass
+    
+    # Find highest milestone we've crossed
+    current_milestone = 0
+    for milestone in COMMENT_MILESTONES:
+        if comment_count >= milestone:
+            current_milestone = milestone
+    
+    # Return it only if it's higher than what we've processed
+    if current_milestone > last_milestone:
+        return current_milestone
+    return 0
+
+
+def check_daily_limit(state: dict) -> tuple[bool, dict]:
+    """Check and reset daily limit if needed. Returns (can_proceed, updated_state)."""
+    today = date.today().isoformat()
+    
+    # Reset counter if new day
+    if state.get("daily_reset_date") != today:
+        state["daily_tldrs"] = 0
+        state["daily_reset_date"] = today
+        print(f"📅 New day detected, reset daily counter")
+    
+    # Check if under limit
+    if state["daily_tldrs"] >= MAX_TLDR_PER_DAY:
+        print(f"⏸️ Daily limit reached ({MAX_TLDR_PER_DAY} TLDRs)")
+        return False, state
+    
+    return True, state
+
+
 def main():
     parser = argparse.ArgumentParser(description="Reddit TLDR Bot for GitHub Actions")
     parser.add_argument("--dry-run", action="store_true", help="Don't post TLDRs, just log what would happen")
@@ -151,7 +261,8 @@ def main():
         password=os.environ["REDDIT_PASSWORD"],
         user_agent="Reddit TLDR Bot v1.0 (GitHub Actions)"
     )
-    print(f"✅ Connected to Reddit as u/{reddit.user.me().name}")
+    bot_username = reddit.user.me().name
+    print(f"✅ Connected to Reddit as u/{bot_username}")
     
     # Initialize Gemini
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
@@ -162,11 +273,15 @@ def main():
     state = load_state()
     last_check = state.get("last_check")
     processed_posts = set(state.get("processed_posts", []))
+    comment_summaries = state.get("comment_summaries", {})
+    
+    # Check daily limit
+    can_proceed, state = check_daily_limit(state)
     
     # Get subreddit
     subreddit = reddit.subreddit(SUBREDDIT)
     
-    # Check posts
+    # Check posts for TLDRs
     tldrs_generated = 0
     total_tokens = 0
     total_cost = 0.0
@@ -174,58 +289,136 @@ def main():
     limit = 10 if last_check is None else 50
     print(f"🔍 Checking last {limit} posts on r/{SUBREDDIT}...")
     
-    for submission in subreddit.new(limit=limit):
-        # Skip if too old
-        if last_check and submission.created_utc < last_check:
-            continue
-        
-        # Skip if already processed
-        if submission.id in processed_posts:
-            continue
-        
-        # Skip if no text content
-        if not submission.selftext:
-            continue
-        
-        # Check word count
-        word_count = count_words(submission.selftext)
-        if word_count < WORD_THRESHOLD:
-            print(f"  📝 Post {submission.id}: {word_count} words (below {WORD_THRESHOLD} threshold)")
-            continue
-        
-        print(f"  ✨ Post {submission.id}: {word_count} words - Generating TLDR...")
-        
-        if args.dry_run:
-            print(f"     [DRY RUN] Would generate TLDR for: {submission.title[:50]}...")
-            processed_posts.add(submission.id)
-            continue
-        
-        try:
-            # Generate TLDR
-            tldr_text, token_info = generate_tldr(submission.selftext, submission.title, model)
+    posts_to_check = list(subreddit.new(limit=limit))
+    
+    # Phase 1: Generate TLDRs for long posts
+    if can_proceed:
+        for submission in posts_to_check:
+            # Skip if too old
+            if last_check and submission.created_utc < last_check:
+                continue
             
-            # Post comment
-            comment_text = f"**TLDR:** {tldr_text}"
-            comment = submission.reply(comment_text)
-            comment.mod.distinguish(sticky=True)
+            # Skip if already processed
+            if submission.id in processed_posts:
+                continue
             
-            print(f"     ✅ Posted TLDR ({len(tldr_text.split())} words, {token_info['total_tokens']} tokens)")
+            # Skip if no text content
+            if not submission.selftext:
+                continue
             
-            processed_posts.add(submission.id)
-            tldrs_generated += 1
-            total_tokens += token_info["total_tokens"]
-            total_cost += token_info["cost"]
+            # Check word count
+            word_count = count_words(submission.selftext)
+            if word_count < WORD_THRESHOLD:
+                print(f"  📝 Post {submission.id}: {word_count} words (below {WORD_THRESHOLD} threshold)")
+                continue
             
-            if tldrs_generated >= MAX_TLDR_PER_RUN:
-                print(f"  ⏸️ Reached max TLDRs per run ({MAX_TLDR_PER_RUN})")
-                break
+            print(f"  ✨ Post {submission.id}: {word_count} words - Generating TLDR...")
+            
+            if args.dry_run:
+                print(f"     [DRY RUN] Would generate TLDR for: {submission.title[:50]}...")
+                processed_posts.add(submission.id)
+                continue
+            
+            try:
+                # Generate TLDR
+                tldr_text, token_info = generate_tldr(submission.selftext, submission.title, model)
                 
-        except Exception as e:
-            print(f"     ❌ Error: {e}")
+                # Post comment
+                comment_text = f"**TLDR:** {tldr_text}"
+                comment = submission.reply(comment_text)
+                comment.mod.distinguish(sticky=True)
+                
+                print(f"     ✅ Posted TLDR ({len(tldr_text.split())} words, {token_info['total_tokens']} tokens)")
+                
+                processed_posts.add(submission.id)
+                tldrs_generated += 1
+                state["daily_tldrs"] = state.get("daily_tldrs", 0) + 1
+                total_tokens += token_info["total_tokens"]
+                total_cost += token_info["cost"]
+                
+                # Only 1 TLDR per run
+                if tldrs_generated >= MAX_TLDR_PER_RUN:
+                    print(f"  ⏸️ Reached max TLDRs per run ({MAX_TLDR_PER_RUN})")
+                    break
+                    
+            except Exception as e:
+                print(f"     ❌ Error: {e}")
+    
+    # Phase 2: Check for comment summaries (if we haven't hit daily limit)
+    can_proceed, state = check_daily_limit(state)
+    
+    if can_proceed:
+        print(f"\n💬 Checking posts for comment summaries...")
+        
+        for submission in posts_to_check:
+            comment_count = submission.num_comments
+            post_id = submission.id
+            last_milestone = comment_summaries.get(post_id, 0)
+            
+            next_milestone = get_next_milestone(comment_count, last_milestone)
+            
+            if next_milestone == 0:
+                continue  # No new milestone
+            
+            print(f"  📊 Post {post_id}: {comment_count} comments - New milestone {next_milestone}!")
+            
+            if args.dry_run:
+                print(f"     [DRY RUN] Would generate comment summary for: {submission.title[:50]}...")
+                comment_summaries[post_id] = next_milestone
+                continue
+            
+            try:
+                # Fetch comments
+                submission.comments.replace_more(limit=0)
+                top_comments = list(submission.comments)[:30]
+                
+                if len(top_comments) < 5:
+                    print(f"     ⏭️ Not enough substantive comments to summarize")
+                    continue
+                
+                # Generate comment summary
+                summary_text, token_info = generate_comment_summary(top_comments, model)
+                
+                if not summary_text:
+                    print(f"     ⏭️ Could not generate summary")
+                    continue
+                
+                # Find existing bot comment or create new one
+                existing_comment = find_bot_comment(submission, bot_username)
+                
+                if existing_comment:
+                    # Edit existing TLDR to append comment summary
+                    new_body = existing_comment.body
+                    
+                    # Remove old comment summary if present
+                    if "---\n\n**💬 Community Discussion" in new_body:
+                        new_body = new_body.split("---\n\n**💬 Community Discussion")[0].rstrip()
+                    
+                    new_body += f"\n\n---\n\n**💬 Community Discussion ({next_milestone}+ comments):** {summary_text}"
+                    existing_comment.edit(new_body)
+                    print(f"     ✅ Updated existing comment with summary ({token_info['total_tokens']} tokens)")
+                else:
+                    # Create new pinned comment
+                    comment_text = f"**💬 Community Discussion Summary ({next_milestone}+ comments):** {summary_text}"
+                    comment = submission.reply(comment_text)
+                    comment.mod.distinguish(sticky=True)
+                    print(f"     ✅ Created new summary comment ({token_info['total_tokens']} tokens)")
+                
+                comment_summaries[post_id] = next_milestone
+                state["daily_tldrs"] = state.get("daily_tldrs", 0) + 1
+                total_tokens += token_info["total_tokens"]
+                total_cost += token_info["cost"]
+                
+                # Only process one comment summary per run as well
+                break
+                    
+            except Exception as e:
+                print(f"     ❌ Error: {e}")
     
     # Update state
     state["last_check"] = datetime.utcnow().timestamp()
     state["processed_posts"] = list(processed_posts)[-1000:]  # Keep last 1000
+    state["comment_summaries"] = comment_summaries
     state["stats"]["total_posts_processed"] += 1
     state["stats"]["total_tldrs_generated"] += tldrs_generated
     state["stats"]["total_tokens_used"] += total_tokens
@@ -235,6 +428,7 @@ def main():
     update_stats(tldrs_generated=tldrs_generated, tokens=total_tokens, cost=total_cost)
     
     print(f"\n📊 Summary: Generated {tldrs_generated} TLDRs, {total_tokens} tokens, ${total_cost:.6f}")
+    print(f"   Daily count: {state['daily_tldrs']}/{MAX_TLDR_PER_DAY}")
     print(f"✅ TLDR Bot completed at {datetime.utcnow().isoformat()}")
 
 

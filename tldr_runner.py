@@ -17,6 +17,7 @@ SUBREDDIT = "accelerate"
 WORD_THRESHOLD = 240  # Minimum words to trigger TLDR
 MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
 MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
+MAX_AGE_HOURS = 24  # Only process posts/comments from last 24 hours
 COMMENT_MILESTONES = [20, 50, 100, 200, 300, 400]  # Comment thresholds for summaries
 
 
@@ -32,6 +33,7 @@ def load_state(state_file: str = "data/tldr_state.json") -> dict:
     return {
         "last_check": None,
         "processed_posts": [],
+        "processed_comments": [],  # Comment IDs already TLDRed
         "comment_summaries": {},  # {post_id: last_milestone}
         "daily_tldrs": 0,
         "daily_reset_date": None,
@@ -239,6 +241,13 @@ def check_daily_limit(state: dict) -> tuple[bool, dict]:
     return True, state
 
 
+def is_too_old(created_utc: float) -> bool:
+    """Check if a post/comment is older than MAX_AGE_HOURS."""
+    age_seconds = datetime.utcnow().timestamp() - created_utc
+    age_hours = age_seconds / 3600
+    return age_hours > MAX_AGE_HOURS
+
+
 def main():
     parser = argparse.ArgumentParser(description="Reddit TLDR Bot for GitHub Actions")
     parser.add_argument("--dry-run", action="store_true", help="Don't post TLDRs, just log what would happen")
@@ -273,6 +282,7 @@ def main():
     state = load_state()
     last_check = state.get("last_check")
     processed_posts = set(state.get("processed_posts", []))
+    processed_comments = set(state.get("processed_comments", []))
     comment_summaries = state.get("comment_summaries", {})
     
     # Check daily limit
@@ -294,8 +304,8 @@ def main():
     # Phase 1: Generate TLDRs for long posts
     if can_proceed:
         for submission in posts_to_check:
-            # Skip if too old
-            if last_check and submission.created_utc < last_check:
+            # Skip if too old (older than MAX_AGE_HOURS)
+            if is_too_old(submission.created_utc):
                 continue
             
             # Skip if already processed
@@ -351,6 +361,10 @@ def main():
         print(f"\n💬 Checking posts for comment summaries...")
         
         for submission in posts_to_check:
+            # Skip if too old (older than MAX_AGE_HOURS)
+            if is_too_old(submission.created_utc):
+                continue
+            
             comment_count = submission.num_comments
             post_id = submission.id
             last_milestone = comment_summaries.get(post_id, 0)
@@ -417,9 +431,85 @@ def main():
             except Exception as e:
                 print(f"     ❌ Error: {e}")
     
+    # Phase 3: Generate TLDRs for long individual comments
+    can_proceed, state = check_daily_limit(state)
+    
+    if can_proceed:
+        print(f"\n📝 Checking for long comments to TLDR...")
+        
+        for submission in posts_to_check:
+            # Skip if too old (older than MAX_AGE_HOURS)
+            if is_too_old(submission.created_utc):
+                continue
+            
+            # Already hit limit for this run?
+            if tldrs_generated >= MAX_TLDR_PER_RUN:
+                break
+            
+            # Fetch comments
+            submission.comments.replace_more(limit=0)
+            
+            for comment in submission.comments.list():
+                # Skip if already processed
+                if comment.id in processed_comments:
+                    continue
+                
+                # Skip if comment is too old
+                if is_too_old(comment.created_utc):
+                    continue
+                
+                # Skip deleted/removed comments
+                if not hasattr(comment, 'body') or not comment.body or comment.body == '[deleted]':
+                    continue
+                
+                # Skip bot's own comments
+                if hasattr(comment, 'author') and comment.author and comment.author.name == bot_username:
+                    continue
+                
+                # Check word count
+                word_count = count_words(comment.body)
+                if word_count < WORD_THRESHOLD:
+                    continue
+                
+                print(f"  ✨ Comment {comment.id}: {word_count} words - Generating TLDR...")
+                
+                if args.dry_run:
+                    print(f"     [DRY RUN] Would generate Comment TLDR")
+                    processed_comments.add(comment.id)
+                    continue
+                
+                try:
+                    # Generate TLDR for the comment
+                    tldr_text, token_info = generate_tldr(comment.body, f"Comment on: {submission.title[:50]}", model)
+                    
+                    # Post reply to the comment
+                    reply_text = f"**Comment TLDR:** {tldr_text}"
+                    reply = comment.reply(reply_text)
+                    
+                    print(f"     ✅ Posted Comment TLDR ({len(tldr_text.split())} words, {token_info['total_tokens']} tokens)")
+                    
+                    processed_comments.add(comment.id)
+                    tldrs_generated += 1
+                    state["daily_tldrs"] = state.get("daily_tldrs", 0) + 1
+                    total_tokens += token_info["total_tokens"]
+                    total_cost += token_info["cost"]
+                    
+                    # Only 1 TLDR per run
+                    if tldrs_generated >= MAX_TLDR_PER_RUN:
+                        print(f"  ⏸️ Reached max TLDRs per run ({MAX_TLDR_PER_RUN})")
+                        break
+                        
+                except Exception as e:
+                    print(f"     ❌ Error: {e}")
+            
+            # Break outer loop if we hit limit
+            if tldrs_generated >= MAX_TLDR_PER_RUN:
+                break
+    
     # Update state
     state["last_check"] = datetime.utcnow().timestamp()
     state["processed_posts"] = list(processed_posts)[-1000:]  # Keep last 1000
+    state["processed_comments"] = list(processed_comments)[-2000:]  # Keep last 2000
     state["comment_summaries"] = comment_summaries
     state["stats"]["total_posts_processed"] += 1
     state["stats"]["total_tldrs_generated"] += tldrs_generated

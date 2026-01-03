@@ -324,7 +324,7 @@ def main():
                 tldr_text, token_info = generate_tldr(submission.selftext, submission.title, model)
                 
                 # Post comment
-                comment_text = f"**TLDR:** {tldr_text}"
+                comment_text = f"**Post TLDR:** {tldr_text}"
                 comment = submission.reply(comment_text)
                 comment.mod.distinguish(sticky=True)
                 

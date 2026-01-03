@@ -387,12 +387,14 @@ def main():
                 existing_comment = find_bot_comment(submission, bot_username)
                 
                 if existing_comment:
-                    # Edit existing TLDR to append comment summary
+                    # Edit existing TLDR to replace comment summary
                     new_body = existing_comment.body
                     
-                    # Remove old comment summary if present
-                    if "---\n\n**💬 Community Discussion" in new_body:
-                        new_body = new_body.split("---\n\n**💬 Community Discussion")[0].rstrip()
+                    # Remove old comment summary if present (handle various line endings)
+                    # Check for both "Community Discussion" and "Community Discussion Summary" formats
+                    import re
+                    # Pattern to match any existing comment summary section
+                    new_body = re.split(r'\n*---\s*\n+\*\*💬 Community Discussion', new_body)[0].rstrip()
                     
                     new_body += f"\n\n---\n\n**💬 Community Discussion ({next_milestone}+ comments):** {summary_text}"
                     existing_comment.edit(new_body)

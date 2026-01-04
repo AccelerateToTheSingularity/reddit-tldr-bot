@@ -14,7 +14,7 @@ import google.generativeai as genai
 
 # Configuration from environment
 SUBREDDIT = "accelerate"
-WORD_THRESHOLD = 250  # Minimum words to trigger TLDR
+WORD_THRESHOLD = 270  # Minimum words to trigger TLDR
 MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
 MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
 MAX_AGE_HOURS = 24  # Only process posts/comments from last 24 hours

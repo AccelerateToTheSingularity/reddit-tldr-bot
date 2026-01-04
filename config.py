@@ -15,8 +15,8 @@ COMMENT_MILESTONES = [20, 50, 100]  # Comment thresholds for summaries
 # Reply/Conversation Settings
 MAX_REPLIES_PER_RUN = 1  # Limit conversational replies per execution (runs are ~3 min apart)
 MAX_REPLIES_PER_DAY = 30  # Daily cap for conversational replies
-MAX_REPLY_WORDS = 150  # Target max words for conversational replies
-MIN_REPLY_WORDS = 30  # Minimum words for replies
+MAX_REPLY_WORDS = 75  # Target max words for conversational replies (keep it tight)
+MIN_REPLY_WORDS = 10  # Minimum words for replies (can be very short if appropriate)
 
 # Rate limiting
 SAME_USER_COOLDOWN_HOURS = 1  # Don't reply to same user within this window

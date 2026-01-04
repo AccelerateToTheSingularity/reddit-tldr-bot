@@ -15,29 +15,47 @@ from config import (
     BOT_INDICATORS,
     SAME_USER_COOLDOWN_HOURS,
     SAME_USER_REPLIES_BEFORE_COOLDOWN,
+    MOD_CACHE_REFRESH_DAYS,
 )
 from persona import generate_conversational_response, generate_post_summon_response
 
-# Cache for moderator list (refreshed each run)
-_moderator_cache = None
+
+def get_cached_moderators(state: dict, subreddit) -> set:
+    """
+    Get moderator set from cache, refreshing from Reddit if stale.
+    Updates state in-place with cached data.
+    """
+    now = datetime.utcnow().timestamp()
+    cache_max_age = MOD_CACHE_REFRESH_DAYS * 24 * 3600  # Convert days to seconds
+    
+    cached_mods = state.get("moderator_cache", {})
+    last_refresh = cached_mods.get("last_refresh", 0)
+    mod_list = cached_mods.get("moderators", [])
+    
+    # Check if cache is fresh enough
+    if mod_list and (now - last_refresh) < cache_max_age:
+        return set(m.lower() for m in mod_list)
+    
+    # Cache is stale or empty - refresh from Reddit
+    try:
+        fresh_mods = [mod.name for mod in subreddit.moderator()]
+        state["moderator_cache"] = {
+            "moderators": fresh_mods,
+            "last_refresh": now
+        }
+        print(f"    🔄 Refreshed moderator cache ({len(fresh_mods)} mods)")
+        return set(m.lower() for m in fresh_mods)
+    except Exception as e:
+        print(f"    ⚠️ Could not refresh mod cache: {e}")
+        # Return stale cache if available, otherwise empty
+        return set(m.lower() for m in mod_list)
 
 
-def get_moderators(subreddit) -> set:
-    """Get the set of moderator usernames for the subreddit."""
-    global _moderator_cache
-    if _moderator_cache is None:
-        try:
-            _moderator_cache = {mod.name.lower() for mod in subreddit.moderator()}
-        except Exception:
-            _moderator_cache = set()
-    return _moderator_cache
-
-
-def is_moderator(author_name: str | None, subreddit) -> bool:
+def is_moderator(author_name: str | None, state: dict, subreddit) -> bool:
     """Check if a user is a moderator of the subreddit."""
     if not author_name:
         return False
-    mods = get_moderators(subreddit)
+    mods = get_cached_moderators(state, subreddit)
     return author_name.lower() in mods
 
 
@@ -170,7 +188,7 @@ def check_for_summons(
                 continue
             
             # Check user cooldown (moderators bypass this)
-            if not is_moderator(author_name, subreddit) and check_user_cooldown(author_name, recent_user_replies):
+            if not is_moderator(author_name, state, subreddit) and check_user_cooldown(author_name, recent_user_replies):
                 print(f"    ⏭️ Skipping u/{author_name} (cooldown active)")
                 continue
             
@@ -258,7 +276,7 @@ def check_for_summons(
                     continue
                 
                 # Check user cooldown (moderators bypass this)
-                if not is_moderator(author_name, subreddit) and check_user_cooldown(author_name, recent_user_replies):
+                if not is_moderator(author_name, state, subreddit) and check_user_cooldown(author_name, recent_user_replies):
                     print(f"    ⏭️ Skipping u/{author_name} (cooldown active)")
                     continue
                 

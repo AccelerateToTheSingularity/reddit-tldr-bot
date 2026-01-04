@@ -18,6 +18,28 @@ from config import (
 )
 from persona import generate_conversational_response, generate_post_summon_response
 
+# Cache for moderator list (refreshed each run)
+_moderator_cache = None
+
+
+def get_moderators(subreddit) -> set:
+    """Get the set of moderator usernames for the subreddit."""
+    global _moderator_cache
+    if _moderator_cache is None:
+        try:
+            _moderator_cache = {mod.name.lower() for mod in subreddit.moderator()}
+        except Exception:
+            _moderator_cache = set()
+    return _moderator_cache
+
+
+def is_moderator(author_name: str | None, subreddit) -> bool:
+    """Check if a user is a moderator of the subreddit."""
+    if not author_name:
+        return False
+    mods = get_moderators(subreddit)
+    return author_name.lower() in mods
+
 
 def is_summon(text: str) -> bool:
     """Check if text contains a summon phrase for the bot."""
@@ -147,8 +169,8 @@ def check_for_summons(
                 summon_responses.add(comment.id)
                 continue
             
-            # Check user cooldown
-            if check_user_cooldown(author_name, recent_user_replies):
+            # Check user cooldown (moderators bypass this)
+            if not is_moderator(author_name, subreddit) and check_user_cooldown(author_name, recent_user_replies):
                 print(f"    ⏭️ Skipping u/{author_name} (cooldown active)")
                 continue
             
@@ -235,8 +257,8 @@ def check_for_summons(
                     summon_responses.add(post_id)
                     continue
                 
-                # Check user cooldown
-                if check_user_cooldown(author_name, recent_user_replies):
+                # Check user cooldown (moderators bypass this)
+                if not is_moderator(author_name, subreddit) and check_user_cooldown(author_name, recent_user_replies):
                     print(f"    ⏭️ Skipping u/{author_name} (cooldown active)")
                     continue
                 

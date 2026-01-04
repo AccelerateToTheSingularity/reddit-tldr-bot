@@ -20,6 +20,7 @@ MIN_REPLY_WORDS = 30  # Minimum words for replies
 
 # Rate limiting
 SAME_USER_COOLDOWN_HOURS = 1  # Don't reply to same user within this window
+SAME_USER_REPLIES_BEFORE_COOLDOWN = 2  # Allow this many replies to a user before cooldown kicks in
 
 # Summon detection patterns (case-insensitive)
 # These patterns will trigger the bot to respond

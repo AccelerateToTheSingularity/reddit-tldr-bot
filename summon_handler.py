@@ -14,6 +14,7 @@ from config import (
     HOSTILE_PATTERNS,
     BOT_INDICATORS,
     SAME_USER_COOLDOWN_HOURS,
+    SAME_USER_REPLIES_BEFORE_COOLDOWN,
 )
 from persona import generate_conversational_response, generate_post_summon_response
 
@@ -56,13 +57,20 @@ def is_too_old(created_utc: float) -> bool:
 
 
 def check_user_cooldown(author_name: str | None, recent_replies: dict) -> bool:
-    """Check if we've recently replied to this user."""
+    """Check if we've recently replied to this user too many times."""
     if not author_name or author_name not in recent_replies:
         return False
     
-    last_reply_time = recent_replies[author_name]
-    hours_since = (datetime.utcnow().timestamp() - last_reply_time) / 3600
+    user_data = recent_replies[author_name]
+    reply_count = user_data.get("count", 0)
+    first_reply_time = user_data.get("first_reply_time", 0)
     
+    # If under the limit, allow reply
+    if reply_count < SAME_USER_REPLIES_BEFORE_COOLDOWN:
+        return False
+    
+    # Over limit - check if cooldown has expired
+    hours_since = (datetime.utcnow().timestamp() - first_reply_time) / 3600
     return hours_since < SAME_USER_COOLDOWN_HOURS
 
 
@@ -170,7 +178,11 @@ def check_for_summons(
                 
                 # Update tracking
                 summon_responses.add(comment.id)
-                recent_user_replies[author_name] = datetime.utcnow().timestamp()
+                # Track reply count per user
+                if author_name not in recent_user_replies:
+                    recent_user_replies[author_name] = {"count": 1, "first_reply_time": datetime.utcnow().timestamp()}
+                else:
+                    recent_user_replies[author_name]["count"] = recent_user_replies[author_name].get("count", 0) + 1
                 summons_handled += 1
                 total_tokens += token_info["total_tokens"]
                 total_cost += token_info["cost"]
@@ -249,7 +261,11 @@ def check_for_summons(
                     
                     # Update tracking
                     summon_responses.add(post_id)
-                    recent_user_replies[author_name] = datetime.utcnow().timestamp()
+                    # Track reply count per user
+                    if author_name not in recent_user_replies:
+                        recent_user_replies[author_name] = {"count": 1, "first_reply_time": datetime.utcnow().timestamp()}
+                    else:
+                        recent_user_replies[author_name]["count"] = recent_user_replies[author_name].get("count", 0) + 1
                     summons_handled += 1
                     total_tokens += token_info["total_tokens"]
                     total_cost += token_info["cost"]

@@ -1,20 +1,21 @@
 {
-  "last_check": 1767489311.373626,
+  "last_check": 1767491972.105126,
   "processed_posts": [
+    "1q27d25",
     "1q2wcw6",
     "1q225qa",
+    "1q26fmj",
+    "1q2vynu",
     "1q2j6a2",
-    "1q33qfc",
-    "1q27d25",
-    "1q26fmj"
+    "1q33qfc"
   ],
   "stats": {
-    "total_posts_processed": 139,
-    "total_tldrs_generated": 21,
-    "total_tokens_used": 53050,
-    "total_cost": 0.007183900000000002
+    "total_posts_processed": 140,
+    "total_tldrs_generated": 22,
+    "total_tokens_used": 55041,
+    "total_cost": 0.007451400000000002
   },
-  "daily_tldrs": 4,
+  "daily_tldrs": 6,
   "daily_reset_date": "2026-01-04",
   "comment_summaries": {
     "1q2crc2": 100,
@@ -35,23 +36,24 @@
     "1q0iptr": 50,
     "1q2kqmv": 20,
     "1q366br": 50,
-    "1q2wcw6": 100
+    "1q2wcw6": 100,
+    "1q2nuwj": 20
   },
   "processed_comments": [
     "nxbokj1",
-    "nxchy4o",
-    "nxdk2bj",
-    "nxazc5k",
     "nxejn2y",
-    "nxcs3ob",
-    "nxdhd5t",
-    "nxcxbyj",
-    "nxce127",
-    "nxcciit",
-    "nxa9soc",
-    "nxf2px2",
     "nxct18i",
     "nxdhi17",
-    "nxekwxj"
+    "nxazc5k",
+    "nxekwxj",
+    "nxf2px2",
+    "nxce127",
+    "nxdhd5t",
+    "nxcciit",
+    "nxchy4o",
+    "nxa9soc",
+    "nxcxbyj",
+    "nxdk2bj",
+    "nxcs3ob"
   ]
 }

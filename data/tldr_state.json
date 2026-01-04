@@ -1,21 +1,21 @@
 {
-  "last_check": 1767519584.009319,
+  "last_check": 1767520004.801982,
   "processed_posts": [
-    "1q225qa",
     "1q33qfc",
-    "1q2j6a2",
-    "1q3d8rv",
-    "1q26fmj",
     "1q27d25",
+    "1q225qa",
+    "1q3d8rv",
+    "1q2j6a2",
     "1q2vynu",
+    "1q26fmj",
     "1q2wcw6"
   ],
   "stats": {
-    "total_posts_processed": 175,
+    "total_posts_processed": 176,
     "total_tldrs_generated": 31,
-    "total_tokens_used": 71168,
-    "total_cost": 0.0094721,
-    "total_replies_sent": 4,
+    "total_tokens_used": 72463,
+    "total_cost": 0.0096136,
+    "total_replies_sent": 5,
     "total_summons_handled": 0
   },
   "daily_tldrs": 18,
@@ -46,36 +46,37 @@
     "1q3hp50": 20
   },
   "processed_comments": [
+    "nxcxbyj",
+    "nxcs3ob",
     "nxjkbkz",
     "nxiynxs",
-    "nxdhd5t",
-    "nxdhi17",
-    "nxk3n98",
-    "nxcciit",
     "nxf2px2",
-    "nxhgz39",
-    "nxbokj1",
-    "nxipkoz",
     "nxce127",
-    "nxgzw97",
+    "nxcciit",
+    "nxiq52y",
+    "nxchy4o",
+    "nxazc5k",
+    "nxk3n98",
+    "nxbokj1",
     "nxa9soc",
     "nxg73ar",
-    "nxekwxj",
-    "nxcs3ob",
-    "nxcxbyj",
-    "nxdk2bj",
-    "nxazc5k",
+    "nxhgz39",
+    "nxdhi17",
+    "nxgzw97",
     "nxejn2y",
-    "nxchy4o",
-    "nxiq52y",
-    "nxct18i"
+    "nxipkoz",
+    "nxdhd5t",
+    "nxdk2bj",
+    "nxct18i",
+    "nxekwxj"
   ],
   "replied_to_comments": [
+    "nxljllq",
     "nxfx0n7",
     "nxlantk",
-    "nxljllq",
-    "nxfsczs",
-    "nxfmbhz"
+    "nxfa10f",
+    "nxfmbhz",
+    "nxfsczs"
   ],
   "recent_user_replies": {
     "stealthispost": 1767515439.888285,
@@ -90,9 +91,13 @@
     "Direita_Pragmatica": {
       "count": 1,
       "first_reply_time": 1767519582.893812
+    },
+    "QuinQuix": {
+      "count": 1,
+      "first_reply_time": 1767520003.749255
     }
   },
-  "daily_replies": 4,
+  "daily_replies": 5,
   "summon_responses": [],
   "moderator_cache": {
     "moderators": [

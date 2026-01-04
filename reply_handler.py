@@ -1,0 +1,186 @@
+"""
+Inbox reply monitoring for the Optimist Prime bot.
+Handles responding to users who reply to the bot's comments.
+"""
+
+import re
+from datetime import datetime
+
+from config import (
+    SUBREDDIT,
+    MAX_REPLIES_PER_RUN,
+    MAX_AGE_HOURS,
+    HOSTILE_PATTERNS,
+    BOT_INDICATORS,
+    SAME_USER_COOLDOWN_HOURS,
+)
+from persona import generate_conversational_response
+
+
+def is_hostile_comment(text: str) -> bool:
+    """Check if a comment appears hostile/bad-faith."""
+    text_lower = text.lower()
+    for pattern in HOSTILE_PATTERNS:
+        if re.search(pattern, text_lower):
+            return True
+    return False
+
+
+def is_likely_bot(author_name: str | None) -> bool:
+    """Check if an author is likely a bot based on username patterns."""
+    if not author_name:
+        return True  # Treat deleted users as bots
+    
+    name_lower = author_name.lower()
+    for pattern in BOT_INDICATORS:
+        if re.search(pattern.lower(), name_lower):
+            return True
+    return False
+
+
+def is_too_old(created_utc: float) -> bool:
+    """Check if a comment is older than MAX_AGE_HOURS."""
+    age_seconds = datetime.utcnow().timestamp() - created_utc
+    age_hours = age_seconds / 3600
+    return age_hours > MAX_AGE_HOURS
+
+
+def check_user_cooldown(author_name: str | None, recent_replies: dict) -> bool:
+    """
+    Check if we've recently replied to this user.
+    
+    Args:
+        author_name: The username to check
+        recent_replies: Dict of {username: last_reply_timestamp}
+    
+    Returns:
+        True if we should skip (user is on cooldown), False if OK to reply
+    """
+    if not author_name or author_name not in recent_replies:
+        return False
+    
+    last_reply_time = recent_replies[author_name]
+    hours_since = (datetime.utcnow().timestamp() - last_reply_time) / 3600
+    
+    return hours_since < SAME_USER_COOLDOWN_HOURS
+
+
+def check_inbox_replies(
+    reddit,
+    gemini_model,
+    state: dict,
+    bot_username: str,
+    dry_run: bool = False
+) -> tuple[int, int, float, dict]:
+    """
+    Check bot's inbox for replies to our comments and respond.
+    
+    Args:
+        reddit: Authenticated PRAW Reddit instance
+        gemini_model: Initialized Gemini model
+        state: Current bot state dict
+        bot_username: The bot's Reddit username
+        dry_run: If True, don't actually post replies
+    
+    Returns:
+        Tuple of (replies_sent, tokens_used, cost, updated_state)
+    """
+    replies_sent = 0
+    total_tokens = 0
+    total_cost = 0.0
+    
+    # Get tracking sets from state
+    replied_to = set(state.get("replied_to_comments", []))
+    recent_user_replies = state.get("recent_user_replies", {})
+    
+    print(f"  📬 Checking inbox for replies to bot comments...")
+    
+    try:
+        # Get comment replies from inbox
+        # This returns comments that are direct replies to our comments
+        inbox_items = list(reddit.inbox.comment_replies(limit=50))
+        
+        for item in inbox_items:
+            # Check if we've hit the per-run limit
+            if replies_sent >= MAX_REPLIES_PER_RUN:
+                print(f"  ⏸️ Reached max replies per run ({MAX_REPLIES_PER_RUN})")
+                break
+            
+            # Skip if already replied to
+            if item.id in replied_to:
+                continue
+            
+            # Skip if too old
+            if is_too_old(item.created_utc):
+                continue
+            
+            # Skip if not from our subreddit
+            if item.subreddit.display_name.lower() != SUBREDDIT.lower():
+                continue
+            
+            # Skip deleted comments
+            if not item.body or item.body == '[deleted]':
+                replied_to.add(item.id)  # Mark as processed
+                continue
+            
+            # Skip if author is a bot
+            author_name = item.author.name if item.author else None
+            if is_likely_bot(author_name):
+                replied_to.add(item.id)
+                continue
+            
+            # Skip if hostile
+            if is_hostile_comment(item.body):
+                print(f"    ⏭️ Skipping hostile comment from u/{author_name}")
+                replied_to.add(item.id)
+                continue
+            
+            # Check user cooldown
+            if check_user_cooldown(author_name, recent_user_replies):
+                print(f"    ⏭️ Skipping u/{author_name} (cooldown active)")
+                continue
+            
+            print(f"    💬 Reply from u/{author_name}: {item.body[:50]}...")
+            
+            if dry_run:
+                print(f"       [DRY RUN] Would respond to comment {item.id}")
+                replied_to.add(item.id)
+                continue
+            
+            try:
+                # Get the submission for context
+                submission = item.submission
+                
+                # Generate response
+                response_text, token_info = generate_conversational_response(
+                    item,
+                    submission,
+                    gemini_model,
+                    is_summon=False
+                )
+                
+                # Post the reply
+                item.reply(response_text)
+                
+                print(f"       ✅ Replied ({len(response_text.split())} words, {token_info['total_tokens']} tokens)")
+                
+                # Update tracking
+                replied_to.add(item.id)
+                recent_user_replies[author_name] = datetime.utcnow().timestamp()
+                replies_sent += 1
+                total_tokens += token_info["total_tokens"]
+                total_cost += token_info["cost"]
+                
+            except Exception as e:
+                print(f"       ❌ Error replying: {e}")
+                replied_to.add(item.id)  # Mark as processed to avoid retry loop
+    
+    except Exception as e:
+        print(f"  ❌ Error checking inbox: {e}")
+    
+    # Update state
+    state["replied_to_comments"] = list(replied_to)[-2000:]  # Keep last 2000
+    state["recent_user_replies"] = recent_user_replies
+    state["daily_replies"] = state.get("daily_replies", 0) + replies_sent
+    
+    return replies_sent, total_tokens, total_cost, state

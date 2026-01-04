@@ -1,6 +1,7 @@
 """
 Minimal TLDR Runner for GitHub Actions.
 Runs a single check cycle for generating TLDRs on r/accelerate posts.
+Also handles reply monitoring and summon detection.
 """
 
 import os
@@ -12,13 +13,20 @@ from datetime import datetime, date
 import praw
 import google.generativeai as genai
 
-# Configuration from environment
-SUBREDDIT = "accelerate"
-WORD_THRESHOLD = 270  # Minimum words to trigger TLDR
-MAX_TLDR_PER_RUN = 1  # Only 1 TLDR per run (~3 min between TLDRs)
-MAX_TLDR_PER_DAY = 40  # Daily cap to prevent bans
-MAX_AGE_HOURS = 24  # Only process posts/comments from last 24 hours
-COMMENT_MILESTONES = [20, 50, 100]  # Comment thresholds for summaries
+# Import configuration from centralized config
+from config import (
+    SUBREDDIT,
+    WORD_THRESHOLD,
+    MAX_TLDR_PER_RUN,
+    MAX_TLDR_PER_DAY,
+    MAX_AGE_HOURS,
+    COMMENT_MILESTONES,
+    MAX_REPLIES_PER_DAY,
+)
+
+# Import handlers for reply and summon features
+from reply_handler import check_inbox_replies
+from summon_handler import check_for_summons
 
 
 def load_state(state_file: str = "data/tldr_state.json") -> dict:
@@ -37,11 +45,18 @@ def load_state(state_file: str = "data/tldr_state.json") -> dict:
         "comment_summaries": {},  # {post_id: last_milestone}
         "daily_tldrs": 0,
         "daily_reset_date": None,
+        # New fields for reply/summon features
+        "replied_to_comments": [],  # IDs of comments we've replied to conversationally
+        "summon_responses": [],  # IDs of summon comments/posts we've responded to
+        "recent_user_replies": {},  # {username: last_reply_timestamp} for cooldowns
+        "daily_replies": 0,  # Daily count for conversational replies
         "stats": {
             "total_posts_processed": 0,
             "total_tldrs_generated": 0,
             "total_tokens_used": 0,
-            "total_cost": 0.0
+            "total_cost": 0.0,
+            "total_replies_sent": 0,
+            "total_summons_handled": 0
         }
     }
 
@@ -308,12 +323,31 @@ def check_daily_limit(state: dict) -> tuple[bool, dict]:
     # Reset counter if new day
     if state.get("daily_reset_date") != today:
         state["daily_tldrs"] = 0
+        state["daily_replies"] = 0  # Also reset reply counter
+        state["recent_user_replies"] = {}  # Clear user cooldowns on new day
         state["daily_reset_date"] = today
-        print(f"📅 New day detected, reset daily counter")
+        print(f"📅 New day detected, reset daily counters")
     
     # Check if under limit
     if state["daily_tldrs"] >= MAX_TLDR_PER_DAY:
-        print(f"⏸️ Daily limit reached ({MAX_TLDR_PER_DAY} TLDRs)")
+        print(f"⏸️ Daily TLDR limit reached ({MAX_TLDR_PER_DAY} TLDRs)")
+        return False, state
+    
+    return True, state
+
+
+def check_daily_reply_limit(state: dict) -> tuple[bool, dict]:
+    """Check daily limit for conversational replies. Returns (can_proceed, updated_state)."""
+    today = date.today().isoformat()
+    
+    # Reset counter if new day (redundant check but safe)
+    if state.get("daily_reset_date") != today:
+        state["daily_replies"] = 0
+        state["daily_reset_date"] = today
+    
+    # Check if under limit
+    if state.get("daily_replies", 0) >= MAX_REPLIES_PER_DAY:
+        print(f"⏸️ Daily reply limit reached ({MAX_REPLIES_PER_DAY} replies)")
         return False, state
     
     return True, state
@@ -584,6 +618,40 @@ def main():
             if tldrs_generated >= MAX_TLDR_PER_RUN:
                 break
     
+    # Phase 4: Check inbox for replies to bot's comments
+    replies_sent = 0
+    can_reply, state = check_daily_reply_limit(state)
+    
+    if can_reply:
+        print(f"\n📬 Phase 4: Checking inbox for replies to bot comments...")
+        try:
+            replies_sent, reply_tokens, reply_cost, state = check_inbox_replies(
+                reddit, model, state, bot_username, args.dry_run
+            )
+            total_tokens += reply_tokens
+            total_cost += reply_cost
+            if replies_sent > 0:
+                print(f"  💬 Sent {replies_sent} conversational replies")
+        except Exception as e:
+            print(f"  ❌ Error in reply handling: {e}")
+    
+    # Phase 5: Check for bot summons in the subreddit
+    summons_handled = 0
+    can_reply, state = check_daily_reply_limit(state)
+    
+    if can_reply:
+        print(f"\n🔔 Phase 5: Checking for bot summons...")
+        try:
+            summons_handled, summon_tokens, summon_cost, state = check_for_summons(
+                subreddit, model, state, bot_username, args.dry_run
+            )
+            total_tokens += summon_tokens
+            total_cost += summon_cost
+            if summons_handled > 0:
+                print(f"  🎯 Responded to {summons_handled} summons")
+        except Exception as e:
+            print(f"  ❌ Error in summon handling: {e}")
+    
     # Update state
     state["last_check"] = datetime.utcnow().timestamp()
     state["processed_posts"] = list(processed_posts)[-1000:]  # Keep last 1000
@@ -593,12 +661,16 @@ def main():
     state["stats"]["total_tldrs_generated"] += tldrs_generated
     state["stats"]["total_tokens_used"] += total_tokens
     state["stats"]["total_cost"] += total_cost
+    state["stats"]["total_replies_sent"] = state["stats"].get("total_replies_sent", 0) + replies_sent
+    state["stats"]["total_summons_handled"] = state["stats"].get("total_summons_handled", 0) + summons_handled
     
     save_state(state)
     update_stats(tldrs_generated=tldrs_generated, tokens=total_tokens, cost=total_cost)
     
-    print(f"\n📊 Summary: Generated {tldrs_generated} TLDRs, {total_tokens} tokens, ${total_cost:.6f}")
-    print(f"   Daily count: {state['daily_tldrs']}/{MAX_TLDR_PER_DAY}")
+    print(f"\n📊 Summary:")
+    print(f"   TLDRs: {tldrs_generated} | Replies: {replies_sent} | Summons: {summons_handled}")
+    print(f"   Tokens: {total_tokens} | Cost: ${total_cost:.6f}")
+    print(f"   Daily TLDRs: {state['daily_tldrs']}/{MAX_TLDR_PER_DAY} | Daily Replies: {state.get('daily_replies', 0)}/{MAX_REPLIES_PER_DAY}")
     print(f"✅ TLDR Bot completed at {datetime.utcnow().isoformat()}")
 
 

@@ -1,21 +1,21 @@
 {
-  "last_check": 1767517747.460602,
+  "last_check": 1767518423.424914,
   "processed_posts": [
     "1q26fmj",
-    "1q2vynu",
-    "1q3d8rv",
-    "1q225qa",
-    "1q33qfc",
-    "1q2wcw6",
     "1q2j6a2",
-    "1q27d25"
+    "1q2vynu",
+    "1q225qa",
+    "1q3d8rv",
+    "1q33qfc",
+    "1q27d25",
+    "1q2wcw6"
   ],
   "stats": {
-    "total_posts_processed": 172,
+    "total_posts_processed": 173,
     "total_tldrs_generated": 31,
-    "total_tokens_used": 67621,
-    "total_cost": 0.0091018,
-    "total_replies_sent": 1,
+    "total_tokens_used": 68399,
+    "total_cost": 0.0091883,
+    "total_replies_sent": 2,
     "total_summons_handled": 0
   },
   "daily_tldrs": 18,
@@ -46,36 +46,72 @@
     "1q3hp50": 20
   },
   "processed_comments": [
-    "nxdhi17",
     "nxa9soc",
-    "nxipkoz",
+    "nxhgz39",
     "nxekwxj",
+    "nxcs3ob",
+    "nxchy4o",
+    "nxjkbkz",
+    "nxiq52y",
+    "nxiynxs",
+    "nxf2px2",
+    "nxdk2bj",
+    "nxk3n98",
+    "nxdhi17",
+    "nxdhd5t",
+    "nxazc5k",
+    "nxg73ar",
+    "nxejn2y",
     "nxgzw97",
     "nxbokj1",
-    "nxcciit",
-    "nxiynxs",
-    "nxg73ar",
-    "nxiq52y",
-    "nxcs3ob",
-    "nxf2px2",
-    "nxdhd5t",
-    "nxhgz39",
-    "nxce127",
-    "nxchy4o",
-    "nxdk2bj",
+    "nxipkoz",
     "nxcxbyj",
+    "nxce127",
     "nxct18i",
-    "nxejn2y",
-    "nxazc5k",
-    "nxk3n98",
-    "nxjkbkz"
+    "nxcciit"
   ],
   "replied_to_comments": [
-    "nxlantk"
+    "nxfx0n7",
+    "nxlantk",
+    "nxljllq"
   ],
   "recent_user_replies": {
-    "stealthispost": 1767515439.888285
+    "stealthispost": 1767515439.888285,
+    "czk_21": {
+      "count": 1,
+      "first_reply_time": 1767518421.925666
+    }
   },
-  "daily_replies": 1,
-  "summon_responses": []
+  "daily_replies": 2,
+  "summon_responses": [],
+  "moderator_cache": {
+    "moderators": [
+      "stealthispost",
+      "AutoModerator",
+      "44th--Hokage",
+      "porcelainfog",
+      "09387456098490856",
+      "tropicalisim0",
+      "Illustrious-Lime-863",
+      "HeinrichTheWolf_17",
+      "random87643",
+      "cloudrunner6969",
+      "SgathTriallair",
+      "bot-bouncer",
+      "evasion-guard",
+      "subscriber-count",
+      "trendingtattler",
+      "manipulation-pi",
+      "erase-user",
+      "yt-app",
+      "queue-pruner",
+      "ai-moderator",
+      "modmail-userinfo",
+      "spambotbuster",
+      "hive-protect",
+      "flag-app",
+      "subguard"
+    ],
+    "last_refresh": 1767518417.483065
+  }
 }

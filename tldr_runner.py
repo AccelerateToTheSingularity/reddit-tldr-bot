@@ -162,6 +162,84 @@ def generate_tldr(content: str, title: str, gemini_model) -> tuple[str, dict]:
     return response.text.strip(), token_info
 
 
+def get_parent_chain(comment, max_parents: int = 3) -> list:
+    """Get parent comments up to max_parents levels."""
+    parents = []
+    current = comment
+    while len(parents) < max_parents:
+        try:
+            parent = current.parent()
+            # Check if parent is a comment (not the submission)
+            if hasattr(parent, 'body') and parent.body and parent.body != '[deleted]':
+                parents.append(parent)
+                current = parent
+            else:
+                break
+        except:
+            break
+    return list(reversed(parents))  # Oldest first
+
+
+def generate_comment_tldr(comment, submission, gemini_model) -> tuple[str, dict]:
+    """Generate TLDR for a comment with context from parents and submission."""
+    word_count = count_words(comment.body)
+    max_words = calculate_max_tldr_words(word_count)
+    
+    # Build context
+    context_parts = []
+    
+    # Add submission context (title + first 300 chars of body if exists)
+    context_parts.append(f"**Original Post Title:** {submission.title}")
+    if submission.selftext:
+        snippet = submission.selftext[:300] + "..." if len(submission.selftext) > 300 else submission.selftext
+        context_parts.append(f"**Original Post (snippet):** {snippet}")
+    
+    # Add parent comments
+    parents = get_parent_chain(comment)
+    if parents:
+        context_parts.append("**Parent Comments (for context):**")
+        for i, parent in enumerate(parents, 1):
+            parent_snippet = parent.body[:200] + "..." if len(parent.body) > 200 else parent.body
+            context_parts.append(f"  [{i}] {parent_snippet}")
+    
+    context = "\n".join(context_parts)
+    
+    prompt = f"""You are a summarization assistant for r/accelerate, a community focused on technological acceleration and AI progress.
+
+Your task is to create a concise TLDR of the following comment. Use the provided context (original post and parent comments) to understand what the comment is responding to, but ONLY summarize the target comment itself.
+
+**CRITICAL REQUIREMENTS:**
+- Target approximately {max_words} words
+- Summarize ONLY the target comment, not the context
+- Use context to understand references and meaning
+- Complete all sentences properly
+
+**FORMAT:**
+Provide only the summary text - no headers or labels.
+
+---
+CONTEXT:
+{context}
+
+---
+TARGET COMMENT TO SUMMARIZE:
+{comment.body}"""
+
+    response = gemini_model.generate_content(
+        [{"role": "user", "parts": [prompt]}],
+        generation_config={"temperature": 0.3, "max_output_tokens": 1024}
+    )
+    
+    token_info = {
+        "input_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0,
+        "output_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0,
+    }
+    token_info["total_tokens"] = token_info["input_tokens"] + token_info["output_tokens"]
+    token_info["cost"] = (token_info["input_tokens"] * 0.10 + token_info["output_tokens"] * 0.40) / 1_000_000
+    
+    return response.text.strip(), token_info
+
+
 def generate_comment_summary(comments: list, gemini_model) -> tuple[str, dict]:
     """Generate summary of comments using Gemini API."""
     # Build comment text
@@ -479,8 +557,8 @@ def main():
                     continue
                 
                 try:
-                    # Generate TLDR for the comment
-                    tldr_text, token_info = generate_tldr(comment.body, f"Comment on: {submission.title[:50]}", model)
+                    # Generate TLDR for the comment with context
+                    tldr_text, token_info = generate_comment_tldr(comment, submission, model)
                     
                     # Post reply to the comment
                     reply_text = f"**Comment TLDR:** {tldr_text}"
